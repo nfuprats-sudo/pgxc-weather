@@ -3,16 +3,45 @@ header (sections 0-4), so big packages (HP1 ~700 MB) can be filtered down to the
 few fields we need and fetched message by message."""
 
 import datetime
+import http.client
 import struct
+import threading
+import urllib.error
+import urllib.parse
 import urllib.request
 
 HEAD_BYTES = 1024
 
 
+_local = threading.local()
+
+
 def _get(url, start, end):
-    req = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end}"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    """Range GET over a kept-alive connection per thread and host: thousands of
+    small header reads, so a fresh TLS handshake each time would dominate."""
+    parts = urllib.parse.urlsplit(url)
+    conns = getattr(_local, "conns", None)
+    if conns is None:
+        conns = _local.conns = {}
+    for attempt in range(3):
+        conn = conns.get(parts.netloc)
+        if conn is None:
+            conn = conns[parts.netloc] = http.client.HTTPSConnection(parts.netloc, timeout=60)
+        try:
+            conn.request("GET", parts.path, headers={"Range": f"bytes={start}-{end}"})
+            r = conn.getresponse()
+            body = r.read()
+        except (http.client.HTTPException, OSError):
+            conn.close()
+            conns.pop(parts.netloc, None)
+            if attempt == 2:
+                raise
+            continue
+        if r.status == 416:
+            raise urllib.error.HTTPError(url, 416, "range not satisfiable", r.headers, None)
+        if r.status not in (200, 206):
+            raise urllib.error.HTTPError(url, r.status, r.reason, r.headers, None)
+        return body
 
 
 def index(url):
