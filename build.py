@@ -1,4 +1,5 @@
-"""Build PGXC's wind + rain map overlays from Météo-France open data.
+"""Build PGXC's wind + rain + thermal map overlays and point forecast tiles from
+Météo-France open data (the thermal/point part lives in forecast.py).
 
 Every run (see .github/workflows/build.yml):
   1. pick the newest AROME/ARPEGE run whose files are all published
@@ -303,6 +304,19 @@ def main():
                 "model": sorted(set(s["model"].values())),
             }
         )
+    del layers  # free the wind fields before the (bigger) forecast pass
+
+    fc = None
+    if not quick:
+        import forecast
+
+        fc = forecast.run_all(now, arome_run, arpege_run)
+        thermal = {h["t"] for h in fc["thermalHours"]}
+        for h in hours:
+            if h["t"] in thermal:
+                h["levels"] = sorted(set(h["levels"]) | set(fc["extraWindLevels"]))
+                h["thermal"] = True
+
     step = round(ARROW_STEP / RES)
     manifest = {
         "generated": now.strftime("%Y-%m-%dT%H:%MZ"),
@@ -312,6 +326,8 @@ def main():
         "hours": hours,
         "attribution": "Météo-France (AROME, ARPEGE), Licence Ouverte",
     }
+    if fc:
+        manifest["forecast"] = {k: v for k, v in fc.items() if k not in ("thermalHours", "extraWindLevels")}
     with open(f"{OUT}/manifest.json", "w") as f:
         json.dump(manifest, f, separators=(",", ":"))
     log(f"done: {len(hours)} hours")
