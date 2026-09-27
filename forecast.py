@@ -79,7 +79,6 @@ VARS = {
     },
 }
 ACCUMULATED = {"rain", "shf"}
-_INDEX = {}  # package url -> [(offset, length, meta)]
 
 
 # ---------- download ----------
@@ -139,10 +138,8 @@ def fetch_model(model, run, fcs):
     def index(job):
         pkg, g = job
         u = build.url(model, run, pkg, g)
-        if u not in _INDEX:  # each package is indexed once per build, not per chunk
-            _INDEX[u] = list(build.grib_index.index(u))
         out = []
-        for off, length, meta in _INDEX[u]:
+        for off, length, meta in build.grib_index.index(u):  # cached per build
             var = match(var_map, pkg, meta)
             if var is None:
                 continue

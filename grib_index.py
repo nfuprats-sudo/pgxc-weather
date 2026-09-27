@@ -44,8 +44,19 @@ def _get(url, start, end):
         return body
 
 
+_CACHE = {}
+
+
 def index(url):
-    """Yield (offset, length, meta) for every message, meta from sections 3/4."""
+    """(offset, length, meta) for every message, meta from sections 3/4.
+    Cached per URL for the whole build: the wind overlays and the forecast read
+    the same packages, and each index costs ~1000 small requests."""
+    if url not in _CACHE:
+        _CACHE[url] = list(_index(url))
+    return _CACHE[url]
+
+
+def _index(url):
     off = 0
     while True:
         try:
