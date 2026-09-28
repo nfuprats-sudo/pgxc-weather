@@ -542,9 +542,18 @@ def run_all(now, arome_run, arpege_run):
     first = now.replace(minute=0, second=0, microsecond=0) - dt.timedelta(hours=1)
     first_day = first.replace(hour=0)
     out = {}
+    today = [first_day + dt.timedelta(hours=h) for h in HOURS]
     for model, run in ((ARPEGE, arpege_run), (AROME, arome_run)):  # AROME last: it wins
         if not run:
             continue
+        # A run only forecasts from its own start on, so today's earlier hours
+        # come from the newest run older than all of them (one fetch), before
+        # this run's hours so those win where both exist.
+        before = [t for t in today if t <= run]
+        if before:
+            prev = build.latest_complete_run(model, before[0] - dt.timedelta(hours=1))
+            if prev:
+                compute(model, prev, before, out)
         last = run + dt.timedelta(hours=int(model["groups"][-1].split("H")[1]))
         wanted = []
         t = first_day
