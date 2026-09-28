@@ -18,6 +18,7 @@ Outputs (under site/):
   thermal/<YYYYMMDDHH>.png        thermal ceiling (m AMSL), transparent without thermals
   wind/<YYYYMMDDHH>_<3500..5000>.png/.bin   wind above 3000 m AGL (from pressure levels)
   fc/<YYYYMMDD>/<tile>.bin.gz     1°x1° tiles for the windgram, layout in write_tiles()
+                                  (cloud = densest cloud within ±125 m of each 250 m level)
 """
 
 import datetime as dt
@@ -42,7 +43,8 @@ STEP_P = 0.1  # profile grid (nodes), degrees
 TILE = 1.0  # tile size, degrees
 NT = round(TILE / STEP_T)  # nodes per tile side
 NP = round(TILE / STEP_P)
-PROFILE_ALTS = list(range(500, 7001, 500))  # m AMSL
+PROFILE_ALTS = list(range(250, 7001, 250))  # m AMSL
+CLOUD_BAND = 125  # m: each level keeps the densest cloud within ± this
 EXTRA_WIND_AGL = [3500, 4000, 4500, 5000]
 HOURS = range(4, 22)  # UTC hours kept in the point tiles
 UPPER_PA = [85000, 80000, 75000, 70000, 65000, 60000, 55000, 50000, 45000, 40000, 35000]
@@ -305,7 +307,12 @@ def hour_fields(fc_data, acc, fc, run_fc0):
         below = tgt < pagl[0]
         prof_u.append(np.where(below, np.nan, interp_levels(pagl, pu, tgt)))
         prof_v.append(np.where(below, np.nan, interp_levels(pagl, pv, tgt)))
-        prof_c.append(np.where(below, np.nan, interp_levels(pagl, pcl, tgt)))
+        # densest cloud near this altitude, so thin layers between two
+        # output levels aren't lost; AROME/ARPEGE give it as a 0..1 fraction
+        near = np.abs(pagl - tgt[None]) <= CLOUD_BAND
+        dense = np.where(near, np.nan_to_num(pcl, nan=-1.0), -1.0).max(axis=0)
+        c = np.fmax(interp_levels(pagl, pcl, tgt), np.where(dense < 0, np.nan, dense))
+        prof_c.append(np.where(below, np.nan, c))
     if "u10" in d and 10 in d["u10"]:
         u10, v10 = d["u10"][10][1], d["v10"][10][1]
     elif 10 in d.get("u", {}):
@@ -365,7 +372,7 @@ class Hour:
             self.puv[k + 1, 0] = np.where(okp, q(f["pu"][k]), self.puv[k + 1, 0])
             self.puv[k + 1, 1] = np.where(okp, q(f["pv"][k]), self.puv[k + 1, 1])
             c = f["pc"][k].reshape(shape_p)
-            self.pc[k] = np.where(okp, np.clip(np.rint(np.nan_to_num(c)), 0, 100), self.pc[k]).astype(np.uint8)
+            self.pc[k] = np.where(okp, np.clip(np.rint(np.nan_to_num(c) * 100), 0, 100), self.pc[k]).astype(np.uint8)
         self.models.add(name)
 
 
