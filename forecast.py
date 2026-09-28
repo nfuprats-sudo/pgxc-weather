@@ -500,6 +500,42 @@ def write_tiles(date, hours_by_utc):
     return written
 
 
+class BadForecast(RuntimeError):
+    """The computed forecast fails a sanity check: don't publish it."""
+
+
+def validate(by_date):
+    """Refuse to publish an obviously broken forecast (the previous good one
+    stays online because the deploy step never runs). Thresholds are loose on
+    purpose: they catch "a whole day with no thermals / no clouds / no hours",
+    which real weather over Western Europe never produces."""
+    problems = []
+    daytime = {d: hs for d, hs in by_date.items() if any(h in hs for h in range(10, 16))}
+    if len(daytime) < 3:
+        problems.append(f"only {len(daytime)} days with daytime hours")
+    for date, hs in sorted(daytime.items()):
+        mid = [hs[h] for h in range(9, 16) if h in hs]
+        land = (mid[0].ter > 100) & (mid[0].ter != -32768)
+        if land.mean() < 0.2:
+            problems.append(f"{date}: model terrain covers {land.mean():.0%} of the grid")
+            continue
+        thermal = np.zeros(land.shape, bool)
+        for h in mid:
+            thermal |= h.ws >= MIN_WSTAR / 0.02
+        frac = thermal[land].mean()
+        if frac < 0.01:
+            problems.append(f"{date}: thermals on {frac:.1%} of land")
+        cloud = max(float((h.pc > 0).mean()) for h in hs.values())
+        if cloud < 0.001:
+            problems.append(f"{date}: no cloud anywhere")
+        zi = np.median(np.concatenate([h.zi[land & (h.zi < 65535)] for h in mid]))
+        if not 50 <= zi <= 5000:
+            problems.append(f"{date}: median ceiling {zi:.0f} m AGL")
+        log(f"check {date}: thermals on {frac:.0%} of land, cloud {cloud:.1%}, median ceiling {zi:.0f} m")
+    if problems:
+        raise BadForecast("; ".join(problems))
+
+
 def run_all(now, arome_run, arpege_run):
     """Compute and write everything; returns the manifest section."""
     os.makedirs(f"{OUT}/thermal", exist_ok=True)
@@ -518,14 +554,18 @@ def run_all(now, arome_run, arpege_run):
             t += dt.timedelta(hours=1)
         compute(model, run, wanted, out)
 
-    hours, by_date = [], {}
+    by_date = {}
+    for t in sorted(out):
+        by_date.setdefault(t.strftime("%Y%m%d"), {})[t.hour] = out[t]
+    validate(by_date)
+
+    hours = []
     for t in sorted(out):
         h = out[t]
         if t >= first:
             write_thermal_png(t, h)
             write_extra_wind(t, h)
             hours.append({"t": t.strftime("%Y%m%d%H"), "model": sorted(h.models)})
-        by_date.setdefault(t.strftime("%Y%m%d"), {})[t.hour] = h
     dates = []
     for date, hs in sorted(by_date.items()):
         n = write_tiles(date, hs)

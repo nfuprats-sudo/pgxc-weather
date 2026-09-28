@@ -2,8 +2,10 @@ name: Build weather overlays
 
 on:
   schedule:
-    # AROME/ARPEGE 00/06/12/18 UTC runs are complete ~4 h later
-    - cron: "40 4,10,16,22 * * *"
+    # AROME runs every 3 h, ARPEGE every 6 h; both are complete ~4 h later.
+    # Every 3 h also means a skipped scheduled run (GitHub drops some under
+    # load) only leaves the data 3 h older, not 6.
+    - cron: "40 1,4,7,10,13,16,19,22 * * *"
   workflow_dispatch:
 
 permissions:
