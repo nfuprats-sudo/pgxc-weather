@@ -133,7 +133,8 @@ def fetch_model(model, run, fcs):
     forecast hours, plus accumulated fields at every hour needed for the differences."""
     name = model["name"]
     var_map = VARS[name]
-    acc_fcs = sorted({f for fc in fcs for f in (fc - 1, fc, fc + 1) if f > 0})
+    # accumulations are hourly early on but only 3-hourly later in ARPEGE's run
+    acc_fcs = sorted({f for fc in fcs for f in range(fc - 3, fc + 4) if f > 0})
     groups = sorted({group_of(model, f) for f in set(fcs) | set(acc_fcs) if group_of(model, f)})
     pkgs = sorted({v[0] for v in var_map.values()})
 
@@ -276,12 +277,23 @@ def hour_fields(fc_data, acc, fc, run_fc0):
         a = acc.get(("shf", f))
         return None if a is None else a[which]
 
-    a0, a1 = acc_at(fc - 1, 0), acc_at(fc + 1, 0)
-    if a0 is not None and a1 is not None:
-        shf = -(a1 - a0) / 7200.0  # accumulated J/m², negative = upward
-    else:
-        ac = acc_at(fc, 0)
-        shf = -(ac - a0) / 3600.0 if ac is not None and a0 is not None else np.zeros_like(zi)
+    # Instantaneous flux ~ centred difference of the accumulation (J/m²,
+    # negative = upward) over the narrowest interval the model publishes:
+    # ±1 h, or wider where ARPEGE only has it every 3 hours.
+    shf = None
+    for k in (1, 2, 3):
+        a0, a1 = acc_at(fc - k, 0), acc_at(fc + k, 0)
+        if a0 is not None and a1 is not None:
+            shf = -(a1 - a0) / (2 * k * 3600.0)
+            break
+    if shf is None:  # end of the run: one-sided
+        for k in (1, 2, 3):
+            a0, ac = acc_at(fc - k, 0), acc_at(fc, 0)
+            if a0 is not None and ac is not None:
+                shf = -(ac - a0) / (k * 3600.0)
+                break
+    if shf is None:
+        shf = np.zeros_like(zi)
     t2 = d["t2"][2][0]
     ps = d["ps"][0][0]
     rho = ps / (RD * t2)
