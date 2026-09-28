@@ -571,7 +571,7 @@ def run_all(now, arome_run, arpege_run):
     hours = []
     for t in sorted(out):
         h = out[t]
-        if t >= first:
+        if t >= first_day:  # map layers for the whole of today, not just from now on
             write_thermal_png(t, h)
             write_extra_wind(t, h)
             hours.append({"t": t.strftime("%Y%m%d%H"), "model": sorted(h.models)})

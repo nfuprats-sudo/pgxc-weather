@@ -150,18 +150,26 @@ def regrid(field, grid):
     return out
 
 
-def collect(model, run, levels, quick=False):
-    """{valid_time: {"u": {lvl: grid}, "v": {...}, "acc": grid}} for this model run."""
+def collect(model, run, levels, quick=False, until=None):
+    """{valid_time: {"u": {lvl: grid}, "v": {...}, "acc": grid}} for this model run
+    (only up to `until`, when given: used to fill today's earlier hours from an
+    older run)."""
     run_hours = {}
     groups = model["groups"][:2] if quick else model["groups"]
+    if until is not None:
+        span = (until - run).total_seconds() / 3600
+        groups = [g for g in groups if int(g.split("H")[0]) <= span]
 
     def valid(fc):
         return run + dt.timedelta(hours=fc)
 
+    def in_range(t):
+        return t.hour in UTC_HOURS and (until is None or t <= until)
+
     def want_hp1(m):
         return (
             m.get("category") == 2 and m.get("number") in (2, 3) and m.get("level_type") == 103
-            and m.get("level") in levels and valid(m["fc"]).hour in UTC_HOURS
+            and m.get("level") in levels and in_range(valid(m["fc"]))
         )
 
     def want_sp1(m):
@@ -169,7 +177,7 @@ def collect(model, run, levels, quick=False):
             return True  # accumulated rain: keep every hour, the hourly diff needs the previous one
         return (
             model is ARPEGE and 10 in levels and m.get("category") == 2 and m.get("number") in (2, 3)
-            and m.get("level") == 10 and valid(m["fc"]).hour in UTC_HOURS
+            and m.get("level") == 10 and in_range(valid(m["fc"]))
         )
 
     jobs = [("HP1", g, want_hp1) for g in groups] + [("SP1", g, want_sp1) for g in groups]
@@ -265,12 +273,11 @@ def main():
     arpege_run = None if quick else latest_complete_run(ARPEGE, now)
     log("runs:", arome_run, arpege_run)
 
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     layers = {}  # valid_time -> {"model", "run", "u", "v", "rain"}
-    for model, run in ((ARPEGE, arpege_run), (AROME, arome_run)):  # AROME last: it wins
-        if not run:
-            continue
-        winds, acc = collect(model, run, levels, quick)
-        rain = hourly_rain(acc, run)
+
+    def merge(model, winds, rain):
+        """Newer data wins where it has values; call oldest/coarsest first."""
         for t, w in winds.items():
             slot = layers.setdefault(t, {"u": {}, "v": {}, "rain": None, "model": {}})
             for lvl in levels:
@@ -286,10 +293,24 @@ def main():
             slot = layers.setdefault(t, {"u": {}, "v": {}, "rain": None, "model": {}})
             slot["rain"] = mm if slot["rain"] is None else np.where(np.isnan(mm), slot["rain"], mm)
 
-    first = now.replace(minute=0, second=0, microsecond=0) - dt.timedelta(hours=1)
+    for model, run in ((ARPEGE, arpege_run), (AROME, arome_run)):  # AROME last: it wins
+        if not run:
+            continue
+        # A run only forecasts from its start on: today's earlier hours come
+        # from the newest run older than all of them, merged first so this
+        # run wins where both have data (same as forecast.py).
+        morning = today + dt.timedelta(hours=min(UTC_HOURS))
+        if not quick and morning <= run:
+            prev = latest_complete_run(model, morning - dt.timedelta(hours=1))
+            if prev:
+                winds, acc = collect(model, prev, levels, until=run)
+                merge(model, winds, {t: mm for t, mm in hourly_rain(acc, prev).items() if t >= today})
+        winds, acc = collect(model, run, levels, quick)
+        merge(model, winds, hourly_rain(acc, run))
+
     hours = []
     for t in sorted(layers):
-        if t < first:
+        if t < today:  # the whole of today stays available, not just from now on
             continue
         s = layers[t]
         for lvl in s["u"]:
