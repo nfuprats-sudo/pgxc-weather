@@ -536,6 +536,29 @@ def validate(by_date):
         raise BadForecast("; ".join(problems))
 
 
+def same_ground(out):
+    """Give every hour the same ground: AROME's where it has data.
+
+    ARPEGE's grid is much coarser, so its terrain in a valley can sit
+    hundreds of metres above AROME's; the windgram's ground then jumps the
+    day ARPEGE takes over. Keep the ceiling's altitude (AMSL) and re-express
+    it above the reference ground instead."""
+    ref = next((out[t] for t in sorted(out) if "arome" in out[t].models), None)
+    if ref is None:
+        return
+    ter_ref, pter_ref = ref.ter.astype(np.int32), ref.pter
+    for h in out.values():
+        if h is ref:
+            continue
+        ter = h.ter.astype(np.int32)
+        move = (ter != -32768) & (ter_ref != -32768) & (ter != ter_ref)
+        zi = np.clip(ter + h.zi.astype(np.int32) - ter_ref, 0, 9000)
+        h.zi = np.where(move & (h.zi != 65535), zi, h.zi).astype(np.uint16)
+        h.ter = np.where(move, ter_ref, ter).astype(np.int16)
+        movep = (h.pter != -32768) & (pter_ref != -32768)
+        h.pter = np.where(movep, pter_ref, h.pter).astype(np.int16)
+
+
 def run_all(now, arome_run, arpege_run):
     """Compute and write everything; returns the manifest section."""
     os.makedirs(f"{OUT}/thermal", exist_ok=True)
@@ -563,6 +586,7 @@ def run_all(now, arome_run, arpege_run):
             t += dt.timedelta(hours=1)
         compute(model, run, wanted, out)
 
+    same_ground(out)
     by_date = {}
     for t in sorted(out):
         by_date.setdefault(t.strftime("%Y%m%d"), {})[t.hour] = out[t]
