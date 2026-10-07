@@ -165,7 +165,7 @@ def fetch_model(model, run, fcs):
         return var, fc, meta.get("level", 0), grid, field
 
     with ThreadPoolExecutor(8) as pool:
-        for var, fc, level, grid, field in pool.map(decode, items):
+        for var, fc, level, grid, field in build.bounded_map(pool, decode, items, 8):
             key = (grid["ni"], grid["nj"], grid["la1"], grid["lo1"])
             if key not in samplers:
                 s = Sampler(grid)

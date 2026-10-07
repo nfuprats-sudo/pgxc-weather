@@ -24,6 +24,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -113,6 +114,19 @@ def wanted_messages(model, run, pkg, group, want):
     return out
 
 
+def bounded_map(pool, fn, items, workers):
+    """pool.map, but with only a few results in flight: plain map submits every
+    item at once and holds each finished (full-resolution) field until the
+    loop reaches it, so one slow download let gigabytes pile up behind it."""
+    pending = deque()
+    for item in items:
+        if len(pending) >= workers * 2:
+            yield pending.popleft().result()
+        pending.append(pool.submit(fn, item))
+    while pending:
+        yield pending.popleft().result()
+
+
 def decode_remote(item):
     u, off, length, meta = item
     raw = grib_index.fetch(u, off, length)
@@ -144,10 +158,10 @@ def regrid(field, grid):
     b = field[yc][:, xc + 1]
     c = field[yc + 1][:, xc]
     d = field[yc + 1][:, xc + 1]
-    out = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
+    out = ((a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy).astype(np.float32)
     out[~validy, :] = np.nan
     out[:, ~valid] = np.nan
-    return out
+    return out  # float32: hundreds of these are held at once
 
 
 def collect(model, run, levels, quick=False, until=None):
@@ -188,7 +202,7 @@ def collect(model, run, levels, quick=False, until=None):
 
     acc = {}
     with ThreadPoolExecutor(16) as pool:
-        for meta, grid, field in pool.map(decode_remote, items):
+        for meta, grid, field in bounded_map(pool, decode_remote, items, 16):
             if meta["category"] == 1:
                 acc[meta["end"]] = regrid(field, grid)  # rain accumulated since the run start
                 continue
@@ -307,6 +321,7 @@ def main():
                 merge(model, winds, {t: mm for t, mm in hourly_rain(acc, prev).items() if t >= today})
         winds, acc = collect(model, run, levels, quick)
         merge(model, winds, hourly_rain(acc, run))
+        del winds, acc  # don't carry a whole run's fields into the next step
 
     hours = []
     for t in sorted(layers):
@@ -351,7 +366,13 @@ def main():
         manifest["forecast"] = {k: v for k, v in fc.items() if k not in ("thermalHours", "extraWindLevels")}
     with open(f"{OUT}/manifest.json", "w") as f:
         json.dump(manifest, f, separators=(",", ":"))
-    log(f"done: {len(hours)} hours")
+    try:
+        import resource  # peak memory, to see how close we run to the runner's 16 GB
+
+        peak = f", peak memory {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6:.1f} GB"
+    except ImportError:  # Windows
+        peak = ""
+    log(f"done: {len(hours)} hours{peak}")
 
 
 if __name__ == "__main__":
