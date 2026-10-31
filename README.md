@@ -17,7 +17,11 @@ GitHub Pages every 6 hours.
   updraft profile in the app. ARPEGE everywhere, AROME on top where it has data
 - `site/thermal/<YYYYMMDDHH>.png` — thermal ceiling (m AMSL), transparent without thermals
 - `site/wind/<YYYYMMDDHH>_<3500..5000>.png/.bin` — wind above 3000 m AGL, from pressure levels
+- `airspace.py` — once a day, OpenAIP's per-country airspace exports cut into
+  5°x5° cells: `site/airspace/<x>_<y>.json` (x = floor(lng/5), y = floor(lat/5)),
+  raw OpenAIP items that PGXC maps itself. Missing cell = no airspace
 - `site/fc/<YYYYMMDD>/<row>_<col>.bin.gz` — 1°x1° point forecast tiles for the
   windgram (layout in `forecast.write_tiles`); `manifest.json` → `forecast`
 
 Data © Météo-France, [Licence Ouverte / Etalab 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/).
+Airspace © [OpenAIP](https://www.openaip.net), CC BY-NC 4.0.

@@ -32,6 +32,18 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python build.py
+      # Airspace: OpenAIP asks for one download per day, so the cells are cached
+      # per UTC day and only rebuilt on the first run of each day.
+      - id: day
+        run: echo "day=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - id: asp
+        uses: actions/cache@v4
+        with:
+          path: airspace-cells
+          key: airspace-${{ steps.day.outputs.day }}
+      - if: steps.asp.outputs.cache-hit != 'true'
+        run: python airspace.py airspace-cells
+      - run: cp -r airspace-cells site/airspace
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
