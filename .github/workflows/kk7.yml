@@ -2,8 +2,8 @@ name: KK7 thermal cells
 
 on:
   schedule:
-    # 1st: this month's layer. 24th: this month plus next month, since the
-    # forecast reaches a few days ahead.
+    # Monthly refresh of this quarter's layer; on the 24th of a quarter's last
+    # month the next quarter is added, since the forecast reaches a few days ahead.
     - cron: "15 2 1,24 * *"
   workflow_dispatch:
 

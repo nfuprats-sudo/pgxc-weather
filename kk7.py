@@ -13,8 +13,10 @@ and only fetch the zoom-10 tiles under the parts that show any thermal.
       32 bytes: which of its 16x16 zoom-10 children have data (bit j*16+i)
       then 512 bytes per present child, in that order: 64x64 bits, row-major
 
-  python kk7.py <outdir> [month ...]    months default to this month, plus
-                                        next month from the 24th on
+  python kk7.py <outdir> [layer ...]    KK7 layers are quarters named after
+                                        their first month (jan, apr, jul, oct)
+                                        or "all"; default: this quarter, plus
+                                        the next one in a quarter's last week
 """
 
 import datetime as dt
@@ -32,7 +34,7 @@ from PIL import Image
 
 URL = "https://thermal.kk7.ch/tiles/thermals_{m}_all/{z}/{x}/{y}.png?src=pgxc.app"
 UA = "pgxc-weather/1.0 (+https://pgxc.app; monthly copy agreed with thermal.kk7.ch)"
-MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+QUARTERS = ["jan", "apr", "jul", "oct"]
 Z0, Z = 6, 10
 SUB = 1 << (Z - Z0)  # zoom-10 children per zoom-6 tile side (16)
 GRID = 64  # cells per zoom-10 tile side
@@ -124,10 +126,12 @@ def build_month(month: str, outdir: Path, stats: dict) -> None:
 
 
 def default_months(today: dt.date) -> list[str]:
-    months = [MONTHS[today.month - 1]]
-    if today.day >= 24:  # the forecast reaches a few days into next month
-        months.append(MONTHS[today.month % 12])
-    return months
+    q = (today.month - 1) // 3
+    layers = [QUARTERS[q]]
+    # The forecast reaches a few days ahead: near a quarter's end, add the next.
+    if today.month % 3 == 0 and today.day >= 24:
+        layers.append(QUARTERS[(q + 1) % 4])
+    return layers
 
 
 def main() -> None:
