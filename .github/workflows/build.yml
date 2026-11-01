@@ -44,6 +44,13 @@ jobs:
       - if: steps.asp.outputs.cache-hit != 'true'
         run: python airspace.py airspace-cells
       - run: cp -r airspace-cells site/airspace
+      # KK7 thermal cells, built monthly by kk7.yml; the newest cache wins.
+      - uses: actions/cache/restore@v4
+        with:
+          path: kk7-cells
+          key: kk7-latest
+          restore-keys: kk7-
+      - run: if [ -d kk7-cells ]; then cp -r kk7-cells site/kk7; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

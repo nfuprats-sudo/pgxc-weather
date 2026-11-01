@@ -1,0 +1,33 @@
+name: KK7 thermal cells
+
+on:
+  schedule:
+    # 1st: this month's layer. 24th: this month plus next month, since the
+    # forecast reaches a few days ahead.
+    - cron: "15 2 1,24 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kk7
+  cancel-in-progress: false
+
+jobs:
+  kk7:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python kk7.py kk7-cells
+      # build.yml picks up the newest kk7-* cache and publishes it with the site.
+      - uses: actions/cache/save@v4
+        with:
+          path: kk7-cells
+          key: kk7-${{ github.run_id }}

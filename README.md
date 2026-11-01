@@ -20,6 +20,10 @@ GitHub Pages every 6 hours.
 - `airspace.py` — once a day, OpenAIP's per-country airspace exports cut into
   5°x5° cells: `site/airspace/<x>_<y>.json` (x = floor(lng/5), y = floor(lat/5)),
   raw OpenAIP items that PGXC maps itself. Missing cell = no airspace
+- `kk7.py` — monthly (workflow kk7.yml), thermal.kk7.ch thermal presence as a
+  yes/no grid: `site/kk7/<month>/<x6>_<y6>.bin` per zoom-6 tile with data
+  (layout in the script); `site/kk7/manifest.json` lists the months. Copy
+  agreed with KK7's admin
 - `site/fc/<YYYYMMDD>/<row>_<col>.bin.gz` — 1°x1° point forecast tiles for the
   windgram (layout in `forecast.write_tiles`); `manifest.json` → `forecast`
 
