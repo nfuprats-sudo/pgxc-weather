@@ -63,7 +63,11 @@ def get(month: str, z: int, x: int, y: int) -> bytes | None:
 
 
 def alpha(png: bytes) -> np.ndarray:
-    return np.asarray(Image.open(io.BytesIO(png)).convert("RGBA"))[:, :, 3]
+    im = Image.open(io.BytesIO(png)).convert("RGBA")
+    # Empty areas come back as tiny placeholder images; work on 256 px always.
+    if im.size != (256, 256):
+        im = im.resize((256, 256), Image.NEAREST)
+    return np.asarray(im)[:, :, 3]
 
 
 def children_with_data(a: np.ndarray) -> list[tuple[int, int]]:
