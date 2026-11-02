@@ -91,12 +91,24 @@ def exists(u):
         return False
 
 
+def needed_packages(model):
+    """Every package this build reads for a model: the overlays (SP1, HP1) and
+    the thermal forecast's variables."""
+    import forecast  # here, not at the top: forecast imports build
+
+    return sorted({"SP1", "HP1"} | {v[0] for v in forecast.VARS[model["name"]].values()})
+
+
 def latest_complete_run(model, now):
-    """Newest run whose last package group is already published."""
+    """Newest run whose last group is published for every package we read.
+    Météo-France publishes a run's packages over a couple of hours; checking
+    only some of them picked runs still missing a file, and the 404 stopped
+    the whole build (so nothing, not even airspace, got deployed)."""
     t = now.replace(minute=0, second=0, microsecond=0)
     t -= dt.timedelta(hours=t.hour % model["runs_every"])
+    pkgs = needed_packages(model)
     for _ in range(8):
-        if exists(url(model, t, "SP1", model["groups"][-1])) and exists(url(model, t, "HP1", model["groups"][-1])):
+        if all(exists(url(model, t, p, model["groups"][-1])) for p in pkgs):
             return t
         t -= dt.timedelta(hours=model["runs_every"])
     return None
