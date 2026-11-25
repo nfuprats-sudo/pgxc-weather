@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 180
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,4 +56,12 @@ jobs:
         with:
           path: site
       - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      # deploy-pages sometimes can't see the artifact just uploaded ("No artifacts
+      # named github-pages"); waiting and retrying once saves the 2 h build.
+      - if: steps.deploy.outcome == 'failure'
+        run: sleep 120
+      - id: deploy2
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
